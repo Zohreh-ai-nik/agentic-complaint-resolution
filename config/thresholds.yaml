@@ -1,0 +1,22 @@
+# Thresholds, limits and gates — the numbers that tune behaviour.
+# Keeping them here means experiments change a value, not the code.
+
+retrieval:
+  top_k: 5                 # how many chunks to retrieve per search
+  rerank_top_k: 20         # how many candidates to pull before reranking
+  min_relevance_score: 0.3 # below this, treat retrieval as "weak" and search again
+
+agentic_rag:
+  max_search_tries: 3      # precedent_agent may rewrite + search up to this many times
+
+checker:
+  max_loops: 2             # assessor <-> checker loops before escalating to a human
+
+budgets:
+  max_tokens_per_complaint: 60000   # hard stop to protect cost
+  max_cost_usd_per_complaint: 0.50  # soft budget; log a warning when exceeded
+  max_steps_per_complaint: 40       # graph step guard against loops
+
+ci_gates:
+  min_outcome_accuracy: 0.60        # regression set must stay at/above this
+  max_dangerous_misses: 5           # "not uphold" where Ombudsman upheld

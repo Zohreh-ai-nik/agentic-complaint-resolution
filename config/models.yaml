@@ -1,0 +1,36 @@
+# Model configuration — names, prices and routing.
+# Nothing in code hard-codes a model name or a price; it is all read from here.
+# Prices are USD per 1,000 tokens. Update them when Azure OpenAI pricing changes.
+
+deployments:
+  # Cheap, fast model: intake, routing, query rewriting.
+  small:
+    deployment: gpt-4o-mini
+    price_per_1k_input: 0.00015
+    price_per_1k_output: 0.00060
+  # Strong model: the assessor that drafts the outcome.
+  strong:
+    deployment: gpt-4o
+    price_per_1k_input: 0.0025
+    price_per_1k_output: 0.010
+  # Checker uses a DIFFERENT model from the assessor (independent second opinion).
+  checker:
+    deployment: gpt-4o-mini
+    price_per_1k_input: 0.00015
+    price_per_1k_output: 0.00060
+  # Embeddings for the knowledge bases.
+  embedding:
+    deployment: text-embedding-3-small
+    price_per_1k_input: 0.00002
+    price_per_1k_output: 0.0
+
+# Which model each agent/node uses. Lets us swap models without touching code.
+routing:
+  intake: small
+  supervisor: small
+  policy_agent: small
+  precedent_agent: small
+  rules_agent: small
+  assessor: strong
+  checker: checker
+  letter: strong

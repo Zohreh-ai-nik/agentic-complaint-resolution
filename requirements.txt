@@ -1,5 +1,11 @@
+# Runtime dependencies
+azure-functions
 requests
 python-dotenv
 pdfplumber
 pydantic
+pyyaml
+
+# Dev / test dependencies
 pytest
+ruff
