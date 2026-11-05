@@ -1,0 +1,29 @@
+# data stays on your laptop, never on GitHub
+data/
+
+# secrets
+.env
+local.settings.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Azure Functions
+.python_packages/
+bin/
+obj/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars.secret
+crash.log
+
+# editors / OS
+.vscode/
+.DS_Store
