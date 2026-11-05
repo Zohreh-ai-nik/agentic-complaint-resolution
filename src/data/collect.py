@@ -44,7 +44,7 @@ COLUMNS = ["drn", "outcome_listing", "date_listing", "pdf_url", "source_url", "c
 PAGE_SIZE = 10          # the search shows 10 decisions per page
 MIN_DELAY = 3.0         # never faster than one request every 3 seconds
 
-DRN_LINK = re.compile(r"/decision/(DRN-\d+)\.pdf", re.IGNORECASE)
+DRN_LINK = re.compile(r"/?decision/(DRN-\d+)\.pdf", re.IGNORECASE)
 DATE = re.compile(r"\b(\d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{4})\b")
 TAG = re.compile(r"<[^>]+>")
 
@@ -122,16 +122,17 @@ def parse_results(html: str) -> list[tuple[str, str]]:
     """Find decisions on one search page: [(DRN, date)] in page order.
 
     The DRN comes from the PDF link, which is reliable. The date is best effort:
-    the nearest date in the text just before the link (may be blank)."""
+    the first date in the text just after the link, which is where the listing
+    shows it (e.g. 'Decision Reference DRN-xxxx 15 Sep 2026')."""
     found, seen = [], set()
     for m in DRN_LINK.finditer(html):
         drn = m.group(1).upper()
         if drn in seen:
             continue
         seen.add(drn)
-        before = TAG.sub(" ", unescape(html[max(0, m.start() - 2000): m.start()]))
-        dates = DATE.findall(before)
-        found.append((drn, dates[-1] if dates else ""))
+        after = TAG.sub(" ", unescape(html[m.end(): m.end() + 2000]))
+        dates = DATE.findall(after)
+        found.append((drn, dates[0] if dates else ""))
     return found
 
 

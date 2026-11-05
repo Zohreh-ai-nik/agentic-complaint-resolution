@@ -48,6 +48,7 @@ def test_split_sections_missing_section_is_empty() -> None:
 
 def test_extract_outcome_upheld() -> None:
     assert extract_outcome("My final decision is that I uphold this complaint.") == "upheld"
+    assert extract_outcome("I uphold Mr B's complaint.") == "upheld"
 
 
 def test_extract_outcome_not_upheld() -> None:
@@ -55,8 +56,18 @@ def test_extract_outcome_not_upheld() -> None:
     assert extract_outcome("I don't uphold this complaint.") == "not_upheld"
 
 
+def test_extract_outcome_past_participle_spelling() -> None:
+    # The PDFs often use "upheld"/"not upheld" (past tense), not "uphold".
+    assert extract_outcome("My final decision is that the complaint is upheld.") == "upheld"
+    assert (
+        extract_outcome("For the reasons given, the complaint is not upheld.") == "not_upheld"
+    )
+    assert extract_outcome("I am upholding this complaint.") == "upheld"
+
+
 def test_extract_outcome_partly_upheld() -> None:
     assert extract_outcome("I partly uphold this complaint.") == "partly_upheld"
+    assert extract_outcome("I uphold this complaint in part.") == "partly_upheld"
 
 
 def test_extract_outcome_none_when_unclear() -> None:

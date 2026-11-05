@@ -258,5 +258,49 @@ Clean, structured decisions with a trustworthy outcome label are the backbone of
 project: they are the search library for precedent, the dev set we tune on, and the hidden
 test set we grade against. Balanced, leak-free splits are what make the evaluation honest.
 
+### What actually happened when we ran it (140 motor decisions)
+
+Running the real collection surfaced three things the original code didn't handle. All are now
+fixed and covered by tests ([tests/test_collect.py](tests/test_collect.py),
+[tests/test_parse.py](tests/test_parse.py)):
+
+1. **The website changed its links.** Decision links are now relative
+   (`decision/DRN-xxxx.pdf`, no leading slash) and the **date sits *after* the link**, not
+   before. The old collector found zero results and would have mis-dated every row. Fixed the
+   link regex and made the date read from after the link ([src/data/collect.py](src/data/collect.py)).
+2. **"upheld" vs "uphold".** The decisions mostly say "up**he**ld" / "not up**he**ld" (past
+   tense), but the parser only matched "up**ho**ld". So real outcomes were being missed. The
+   regex now matches `uphold`, `upheld` and `upholding`.
+3. **The site has two outcome categories; the decisions have three.** The website filter only
+   offers *Upheld* / *Not upheld*, but many decisions say "I uphold this complaint **in part**".
+   The parser now detects **partly_upheld** from the real text, and we treat the **PDF outcome
+   as authoritative** (falling back to the listing label only when the PDF has no uphold word,
+   e.g. it just directs a payment). Disagreements are logged in `parse_issues.csv` for review —
+   and on inspection they are exactly these legitimate "partly upheld filed under Upheld" cases,
+   not parser errors.
+
+Final data quality on the starter batch:
+
+```
+parsed decisions:  140   (0 missing essential sections)
+by outcome:        upheld 53, partly_upheld 13, not_upheld 74
+outcome from list: 5     (PDF just directed a payment; used the listing label)
+outcome mismatch:  18    (all explained: 3-way parse vs the site's 2-way filter)
+
+splits (test used once at the end; never searched):
+  test      30   {not_upheld: 10, partly_upheld: 10, upheld: 10}
+  dev       29   {not_upheld: 13, partly_upheld: 3, upheld: 13}
+  library   81   {not_upheld: 51, upheld: 30}
+```
+
+Spot-checking confirmed the parser: e.g. `DRN-6162141`, `DRN-6519652`, `DRN-6565063` and
+`DRN-6599947` all literally say "I uphold this complaint in part" and are correctly labelled
+`partly_upheld`.
+
+> To scale up later, just re-run the `index`/`download` commands with a larger `--max`
+> (toward ~2,000). Everything skips what you already have, and `parse`/`split`/`stats` re-run
+> over the whole set.
+
+
 
 
