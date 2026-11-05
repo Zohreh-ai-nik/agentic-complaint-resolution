@@ -47,7 +47,7 @@ public Financial Ombudsman decisions.
 | Phase | Goal | Status |
 |---|---|---|
 | **0 Setup** | Repo skeleton, `function_app.py` with `/api/health`, config, settings, pytest, ruff | ✅ done |
-| **1 Data** | `parse.py`, `split.py`, stats; collect motor decisions | ⬜ not started |
+| **1 Data** | `parse.py`, `split.py`, stats; collect motor decisions | ✅ done (code + tests; collection is a manual run) |
 | **2 Baseline** | One LLM, no search; scorer with accuracy + dangerous misses | ⬜ not started |
 | **3 Knowledge bases** | Chunking, embeddings in pgvector, hybrid search + reranker, recall@5 | ⬜ not started |
 | **4 Single agent + RAG** | One LangGraph agent with 3 search tools; citation checks | ⬜ not started |
@@ -145,4 +145,118 @@ curl http://localhost:7072/api/health
 This gives us a running, testable serverless app with a clean separation between **config**
 (YAML) and **code**, and a test-first habit. Every later phase (data, agents, the graph, the
 full API) slots into this skeleton.
+
+---
+
+## Phase 1 — Data ✅ (code + tests ready; collection is a manual run)
+
+**Goal:** turn raw Financial Ombudsman decision PDFs into clean, structured records we can
+search and score against, and split them into **test / dev / library** sets so the "answer
+key" never leaks into the search library.
+
+### The shape of the data
+
+- `src/data/collect.py` (already existed) downloads, slowly and politely, two things:
+  - `data/raw/index.csv` — one row per decision: `drn`, `outcome_listing`, `date_listing`,
+    `pdf_url`, …
+  - `data/raw/pdfs/DRN-*.pdf` — the decision PDFs themselves.
+- Every decision PDF has four fixed headings: **The complaint**, **What happened**,
+  **What I've decided – and why**, **My final decision**.
+
+### What I did, step by step
+
+1. **Added a `Decision` Pydantic model** to [src/schemas.py](src/schemas.py) — the single
+   structured shape for a parsed decision (the four sections, the parsed `outcome`, the
+   listing outcome, a `outcome_mismatch` flag, date and source path). Also added the shared
+   `OUTCOMES` tuple (`upheld`, `partly_upheld`, `not_upheld`) used everywhere.
+2. **Built the parser** [src/data/parse.py](src/data/parse.py):
+   - `extract_text()` is the only function that touches `pdfplumber` (imported lazily), so
+     the rest is testable without any PDFs.
+   - `split_sections()` splits the text on the four headings. The heading regexes tolerate the
+     different dash characters (`-`, `–`, `—`) and the curly apostrophe in "I've".
+   - `extract_outcome()` reads the outcome from the *final* section only, checking "partly"
+     and the negatives ("do not / don't / cannot uphold") **before** the plain "uphold" so it
+     can't misread a "not uphold" as "uphold".
+   - `build_decision()` combines the parsed text with the listing row and sets
+     `outcome_mismatch` when the two disagree.
+   - The CLI writes `data/processed/decisions.jsonl` (one Decision per line) and, for anything
+     suspicious (mismatch, missing section, missing outcome), a row in
+     `data/processed/parse_issues.csv` so you can eyeball problems.
+3. **Built the splitter** [src/data/split.py](src/data/split.py):
+   - `parse_date()` turns free-text dates like "12 January 2024" into real dates for sorting.
+   - `assign_splits()` groups by outcome, sorts each group newest-first, then takes an **equal
+     share per outcome** for **test** (newest) and **dev** (next), leaving the rest as the
+     **library**. This keeps the sets balanced and guarantees the newest decisions (our hidden
+     answer key) are the test set and never appear in the library.
+   - Writes `data/labels/split.csv` (`drn, split, outcome`).
+4. **Built the stats view** [src/data/stats.py](src/data/stats.py) — prints parsed counts,
+   counts per outcome, mismatch count, parse-issue count, and the size/outcome breakdown of
+   each split. This is the Phase 1 "done when" check.
+5. **Wrote tests** with text fixtures (no downloads, no pdfplumber):
+   - [tests/test_parse.py](tests/test_parse.py) — section splitting (including missing
+     sections) and every outcome branch, plus the mismatch flag.
+   - [tests/test_split.py](tests/test_split.py) — date parsing, balanced splits, newest-first
+     ordering, every DRN assigned exactly once, and **no test leaks into library**.
+6. **Verified** everything: `ruff` clean, 15 tests pass, the CLIs give friendly messages when
+   there's no data yet, and an end-to-end dry run on 120 synthetic records produced correctly
+   balanced splits (e.g. test 10/10/10 per outcome) and correct stats. The synthetic data was
+   then deleted — real data only ever comes from the collector.
+
+### Files created / changed
+
+- Created: `src/data/parse.py`, `src/data/split.py`, `src/data/stats.py`,
+  `tests/test_parse.py`, `tests/test_split.py`.
+- Changed: `src/schemas.py` (added `Decision` + `OUTCOMES`), `walkthrough.md`.
+
+### How to run it — collecting the real data (you run this)
+
+Collection is a slow, polite download (≥3s between requests), so you run it yourself. From the
+Ombudsman search page, tick the insurance → motor filters and the outcome, copy the URL, then:
+
+```bash
+source .venv/bin/activate
+
+# Optional: identify yourself politely
+echo 'CONTACT_EMAIL=you@example.com' >> .env
+
+# 1) Build the index from filtered search URLs (start small: 50 of each)
+python -m src.data.collect index --url "<URL with Upheld ticked>"     --label upheld     --max 50
+python -m src.data.collect index --url "<URL with Not upheld ticked>" --label not_upheld --max 50
+
+# 2) Download the PDFs listed in the index
+python -m src.data.collect download --max 100
+
+# 3) Parse PDFs -> decisions.jsonl (+ parse_issues.csv)
+python -m src.data.parse
+
+# 4) Split into test / dev / library
+python -m src.data.split
+
+# 5) See the counts
+python -m src.data.stats
+```
+
+Both `index` and `download` skip what you already have, so you can stop and re-run any time.
+Start with ~50 each to sanity-check, then scale up toward ~2,000 motor decisions.
+
+### What you should see
+
+- `python -m src.data.parse` → counts of parsed PDFs, missing sections, missing outcomes and
+  mismatches; `data/processed/decisions.jsonl` created.
+- `python -m src.data.stats` → counts per outcome and a per-split breakdown, e.g.:
+  ```
+  test        200  {'not_upheld': 66, 'partly_upheld': 66, 'upheld': 66}
+  dev         300  {'not_upheld': 100, 'partly_upheld': 100, 'upheld': 100}
+  library    1500  {...}
+  ```
+- Open ~20 random rows of `decisions.jsonl` and check the four sections and the outcome look
+  right; investigate anything in `parse_issues.csv`.
+
+### Why it matters
+
+Clean, structured decisions with a trustworthy outcome label are the backbone of the whole
+project: they are the search library for precedent, the dev set we tune on, and the hidden
+test set we grade against. Balanced, leak-free splits are what make the evaluation honest.
+
+
 
